@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "br-risk-ml"
+version = "0.1.0"
+description = "Classificação da gravidade de acidentes rodoviários brasileiros"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "xgboost",
+    "joblib"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

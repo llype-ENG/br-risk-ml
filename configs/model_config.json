@@ -1,0 +1,56 @@
+
+{
+  "model_name": "BR-Risk-ML",
+  "model_version": "1.0.0",
+  "task": "multiclass_classification",
+  "target": "target",
+  "features": {
+    "categorical": [
+      "tipo_acidente",
+      "causa_acidente",
+      "fase_dia"
+    ],
+    "numerical": [
+      "pessoas",
+      "veiculos",
+      "latitude",
+      "longitude"
+    ]
+  },
+  "classes": [
+    "Com Vítimas Fatais",
+    "Com Vítimas Feridas",
+    "Sem Vítimas"
+  ],
+  "training": {
+    "period": "2017-2023",
+    "random_state": 42,
+    "sample_weight_exponent": 0.5
+  },
+  "xgboost": {
+    "max_depth": 8,
+    "learning_rate": 0.1,
+    "n_estimators": 400,
+    "min_child_weight": 3,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_lambda": 1
+  },
+  "post_training_weights": {
+    "Com Vítimas Fatais": 0.978,
+    "Sem Vítimas": 1.118,
+    "demais": 1.0
+  },
+  "validation": {
+    "period": "2023",
+    "honest_estimated_f1_macro": 0.5643274459492752,
+    "full_validation_f1_macro": 0.6143,
+    "note": "As métricas representam procedimentos diferentes. A validação de 2023 participou da seleção e otimização do modelo."
+  },
+  "test": {
+    "period": "2024-2025",
+    "status": "previously_used_in_experiments",
+    "note": "Não deve ser apresentado como conjunto de teste independente."
+  },
+  "seed": 42
+}
