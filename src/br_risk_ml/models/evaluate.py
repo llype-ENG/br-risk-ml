@@ -164,12 +164,14 @@ def avaliar(nome_arquivo):
 
 
 if __name__ == "__main__":
-    resultado = avaliar("validacao_expandido.csv")
+    resultado = avaliar("teste_expandido.csv")
 
     diretorio_saida = REPORTS_DIR / "avaliacao"
     diretorio_saida.mkdir(parents=True, exist_ok=True)
 
-    caminho_saida = diretorio_saida / "metricas_validacao.json"
+    caminho_saida = (
+        diretorio_saida / "metricas_teste_2024_2025.json"
+    )
 
     with open(caminho_saida, "w", encoding="utf-8") as arquivo:
         json.dump(
