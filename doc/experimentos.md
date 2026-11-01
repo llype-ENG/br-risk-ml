@@ -120,12 +120,9 @@ Linhas = classes reais; colunas = classes previstas.
 
 ### Avaliação de 2023
 
-Após treinar o artefato final com 2017–2023, a avaliação sobre 2023 apresentou:
-- Accuracy: 0.7746
-- F1 Macro: 0.6143
-- Balanced Accuracy: 0.6199
+Após treinar o artefato final com 2017–2023, a avaliação sobre 2023 apresentou F1 Macro = 0.6143. Esse resultado é in-sample, pois o ano de 2023 também foi incluído no treinamento final. Outros indicadores de 2023 não são apresentados aqui porque não foram confirmados no registro consolidado dos experimentos.
 
-Esses valores são in-sample. Também foi obtida estimativa por cross-estimation de F1 Macro = 0.564327 durante a otimização da ponderação das classes. Como 2023 entrou em outras decisões de desenvolvimento, esse valor também não constitui estimativa independente de todo o processo.
+Também foi obtida estimativa por cross-estimation de F1 Macro = 0.564327 durante a otimização da ponderação das classes. Como 2023 entrou em outras decisões de desenvolvimento, esse valor também não constitui estimativa independente de todo o processo.
 
 ## 6. Importância de variáveis — Gain
 
