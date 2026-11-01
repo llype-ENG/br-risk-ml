@@ -1,225 +1,277 @@
-# Histórico de Experimentos --- BR-Risk-ML
+# Histórico de experimentos — BR-Risk-ML
 
-Este documento registra as principais etapas de investigação e decisões
-técnicas que levaram à configuração atual do BR-Risk-ML.
+Este documento registra os principais experimentos, decisões metodológicas e diagnósticos do BR-Risk-ML. O objetivo é preservar a rastreabilidade da versão inicial e orientar futuras iterações.
 
-O projeto classifica retrospectivamente a gravidade de acidentes
-registrados pela Polícia Rodoviária Federal (PRF). Ele não estima a
-probabilidade de um acidente ocorrer em determinado local ou momento: a
-base contém registros de acidentes, sem observações de exposição ou de
-ausência de acidentes.
+> **Nota metodológica:** os resultados de 2024–2025 são diagnósticos, e não uma avaliação independente, porque esse período já foi consultado durante experimentos anteriores. Não usar esses resultados para alegar generalização independente.
 
-## 1. Definição do problema
+## 1. Dados e divisão temporal
 
-A variável-alvo possui três classes:
+- Período de dados: 2017–2025.
+- Registros consolidados: 632.713.
+- Registros com variável-alvo: 632.703.
+- Registros sem alvo removidos: 10.
 
--   `Com Vítimas Fatais`
--   `Com Vítimas Feridas`
--   `Sem Vítimas`
+| Partição inicial | Período | Registros |
+|---|---|---:|
+| Treino | 2017–2022 | 419.209 |
+| Validação | 2023 | 67.765 |
+| Teste histórico | 2024–2025 | 145.729 |
 
-A distribuição das classes é desigual, com predominância de acidentes
-com vítimas feridas. Por isso, o **F1 Macro** foi adotado como métrica
-principal, acompanhado de Balanced Accuracy e métricas individuais de
-precisão, recall e F1 por classe.
+O artefato atual foi treinado com treino + validação, 2017–2023, totalizando 486.974 registros.
 
-## 2. Preparação e divisão temporal
+**Consequências para avaliação:**
+- 2023 participou de decisões de seleção/otimização e do treinamento final; sua avaliação é in-sample.
+- 2024–2025 não participou do treinamento do artefato atual, mas foi consultado em experimentos anteriores; sua avaliação é temporal diagnóstica, não holdout intocado.
 
-Foram utilizados registros da PRF de 2017 a 2025. O conjunto consolidado
-possui 632.713 registros; após remover 10 registros sem variável-alvo,
-restaram 632.703.
+## 2. Variáveis e prevenção de vazamento
 
-  Partição               Período   Registros
-  ----------------- ------------ -----------
-  Treino inicial      2017--2022     419.209
-  Validação                 2023      67.765
-  Teste histórico     2024--2025     145.729
+Variáveis utilizadas:
+- Categóricas: `tipo_acidente`, `causa_acidente`, `fase_dia`.
+- Numéricas: `pessoas`, `veiculos`, `latitude`, `longitude`.
 
-A separação temporal aproxima a avaliação de um cenário em que dados
-históricos são usados para classificar registros de períodos
-posteriores.
+Foram excluídas colunas que revelam diretamente a classificação ou componentes da variável-alvo:
+`classificacao_acidente`, `mortos`, `feridos`, `feridos_leves`, `feridos_graves`, `ilesos`, `ignorados`.
 
-**Ressalva:** os dados de 2024--2025 já foram utilizados em experimentos
-anteriores de comparação entre modelos. Portanto, não devem ser
-apresentados como um teste independente e intocado. O ano de 2023 também
-participou da seleção de variáveis e otimização, o que pode tornar os
-resultados de validação otimistas.
+Observação: embora não sejam colunas diretamente derivadas do alvo, algumas entradas podem refletir informações registradas depois da ocorrência ou durante sua investigação. O modelo é, portanto, retrospectivo.
 
-## 3. Seleção de variáveis
+## 3. Modelo final da versão inicial
 
-Foram realizadas análises de importância e experimentos com diferentes
-conjuntos de atributos. A configuração selecionada utiliza sete
-variáveis:
+Algoritmo: XGBoost multiclasse.
 
-  Variável           Tipo
-  ------------------ ------------
-  `tipo_acidente`    Categórica
-  `causa_acidente`   Categórica
-  `fase_dia`         Categórica
-  `pessoas`          Numérica
-  `veiculos`         Numérica
-  `latitude`         Numérica
-  `longitude`        Numérica
+| Parâmetro | Valor |
+|---|---:|
+| `max_depth` | 8 |
+| `learning_rate` | 0.1 |
+| `n_estimators` | 400 |
+| `min_child_weight` | 3 |
+| `subsample` | 0.8 |
+| `colsample_bytree` | 0.8 |
+| `reg_lambda` | 1 |
+| `random_state` | 42 |
 
-Para evitar vazamento de informação, foram excluídas variáveis
-diretamente relacionadas ao resultado do acidente:
+Balanceamento: `compute_sample_weight("balanced", y) ** 0.5`.
 
--   `classificacao_acidente`
--   `mortos`
--   `feridos`
--   `feridos_leves`
--   `feridos_graves`
--   `ilesos`
--   `ignorados`
+Multiplicadores posteriores de score:
+- Fatais: 0.978
+- Feridas: 1.000
+- Sem vítimas: 1.118
 
-A importância das variáveis representa associação preditiva observada
-pelo modelo, não causalidade.
+O pipeline inclui imputação numérica pela mediana, preenchimento de categoria ausente com `"Não informado"`, OneHotEncoder (`handle_unknown="ignore"`, `min_frequency=10`) e XGBoost.
 
-## 4. Comparação de algoritmos
+## 4. Baseline
 
-Foram avaliadas abordagens com Random Forest e XGBoost, além de
-diferentes conjuntos de atributos e estratégias de balanceamento.
+Foi avaliada uma baseline trivial:
+`DummyClassifier(strategy="most_frequent")`.
 
-Em experimentos históricos realizados sobre o conjunto de 2024--2025,
-foram observados:
+Ela sempre prevê a classe majoritária, `Com Vítimas Feridas`.
 
-  Experimento                           F1 Macro histórico
-  ----------------------------------- --------------------
-  Random Forest                                     0,5077
-  XGBoost com ponderação balanceada                 0,5091
+Resultados no conjunto diagnóstico 2024–2025:
 
-Esses resultados pertencem a configurações anteriores e não representam
-necessariamente o desempenho da configuração atual. Como 2024--2025 foi
-consultado durante os experimentos, esses valores são referências
-históricas, não uma estimativa independente de generalização.
+| Métrica | Baseline |
+|---|---:|
+| Accuracy | 0.7711 |
+| F1 Macro | 0.2903 |
+| Balanced Accuracy | 0.3333 |
 
-O XGBoost foi escolhido para a configuração atual por oferecer uma
-abordagem adequada aos dados tabulares e permitir investigar estratégias
-de ponderação das classes.
+O F1 por classe da baseline foi:
+- Com Vítimas Fatais: 0.0000
+- Com Vítimas Feridas: 0.8708
+- Sem Vítimas: 0.0000
 
-## 5. Balanceamento e otimização
+A acurácia relativamente alta decorre da prevalência da classe feridos. A baseline não reconhece as classes minoritárias.
 
-Devido ao desbalanceamento entre as classes, foram testados pesos
-derivados de `compute_sample_weight("balanced", y)`, elevados aos
-expoentes:
+## 5. Avaliação do XGBoost
 
--   0,00
--   0,25
--   0,50
--   0,75
--   1,00
+Avaliação temporal diagnóstica no período 2024–2025:
 
-Também foram investigados multiplicadores aplicados aos scores de
-probabilidade após o treinamento, com foco nas classes
-`Com Vítimas Fatais` e `Sem Vítimas`.
+| Métrica | XGBoost |
+|---|---:|
+| Accuracy | 0.7567 |
+| F1 Macro | 0.5726 |
+| Balanced Accuracy | 0.5753 |
 
-A otimização foi conduzida usando a validação de 2023. A estimativa
-denominada "honesta" utilizou uma divisão interna para estimar os
-multiplicadores, reduzindo a dependência de uma única avaliação.
+Comparação:
 
-A configuração selecionada utiliza expoente de ponderação igual a 0,5:
+| Métrica | Baseline | XGBoost |
+|---|---:|---:|
+| Accuracy | 0.7711 | 0.7567 |
+| F1 Macro | 0.2903 | 0.5726 |
+| Balanced Accuracy | 0.3333 | 0.5753 |
 
-  Classe                    Multiplicador
-  ----------------------- ---------------
-  `Com Vítimas Fatais`              0,978
-  `Com Vítimas Feridas`             1,000
-  `Sem Vítimas`                     1,118
+Variação do F1 Macro: +0.2823 ponto absoluto. O XGBoost tem acurácia 0.0144 menor, mas apresenta melhor equilíbrio entre as classes.
 
-Esses multiplicadores ajustam os scores usados na decisão final; não
-alteram os parâmetros internos já aprendidos pelo XGBoost.
+### Métricas por classe
 
-## 6. Configuração atual do XGBoost
+| Classe | Precision | Recall | F1 | Suporte |
+|---|---:|---:|---:|---:|
+| Fatais | 0.3840 | 0.4321 | 0.4067 | 10.434 |
+| Feridas | 0.8458 | 0.8507 | 0.8482 | 112.375 |
+| Sem vítimas | 0.4847 | 0.4432 | 0.4630 | 22.920 |
 
-A configuração oficial está registrada em `configs/model_config.json`:
+### Matriz de confusão
 
-  Parâmetro              Valor
-  -------------------- -------
-  `max_depth`                8
-  `learning_rate`          0,1
-  `n_estimators`           400
-  `min_child_weight`         3
-  `subsample`              0,8
-  `colsample_bytree`       0,8
-  `reg_lambda`               1
-  `random_state`            42
+Linhas = classes reais; colunas = classes previstas.
 
-O treinamento final combina os dados de 2017 a 2023, totalizando 486.974
-registros. O pré-processamento inclui imputação de valores numéricos e
-codificação One-Hot das variáveis categóricas.
+| Real / Prevista | Fatais | Feridas | Sem vítimas |
+|---|---:|---:|---:|
+| Fatais | 4.509 | 5.178 | 747 |
+| Feridas | 6.723 | 95.601 | 10.051 |
+| Sem vítimas | 509 | 12.254 | 10.157 |
 
-Este documento descreve o histórico e as motivações dos experimentos. A
-configuração executável deve ser consultada em
-`configs/model_config.json`.
+### Avaliação de 2023
 
-## 7. Avaliação na validação de 2023
+Após treinar o artefato final com 2017–2023, a avaliação sobre 2023 apresentou:
+- Accuracy: 0.7746
+- F1 Macro: 0.6143
+- Balanced Accuracy: 0.6199
 
-Na avaliação completa da configuração final sobre 2023, foram obtidos:
+Esses valores são in-sample. Também foi obtida estimativa por cross-estimation de F1 Macro = 0.564327 durante a otimização da ponderação das classes. Como 2023 entrou em outras decisões de desenvolvimento, esse valor também não constitui estimativa independente de todo o processo.
 
-  Métrica               Resultado
-  ------------------- -----------
-  Acurácia                 0,7746
-  F1 Macro                 0,6143
-  Balanced Accuracy        0,6199
+## 6. Importância de variáveis — Gain
 
-Métricas por classe:
+A importância nativa do XGBoost foi calculada sobre as colunas transformadas e agregada novamente às sete variáveis originais.
 
-  Classe                  Precisão   Recall       F1
-  --------------------- ---------- -------- --------
-  Com Vítimas Fatais        0,4445   0,5138   0,4767
-  Com Vítimas Feridas       0,8570   0,8598   0,8584
-  Sem Vítimas               0,5312   0,4862   0,5077
+O pré-processamento gerou 119 colunas one-hot/numéricas; 118 foram utilizadas em divisões das árvores.
 
-A diferença entre o desempenho da classe majoritária e o das demais
-evidencia espaço para melhorar a identificação de acidentes fatais e sem
-vítimas.
+| Variável original | Gain total | Participação no Gain |
+|---|---:|---:|
+| `tipo_acidente` | 485.874,6110 | 42,93% |
+| `causa_acidente` | 141.144,3859 | 12,47% |
+| `pessoas` | 140.384,6276 | 12,40% |
+| `latitude` | 130.033,8407 | 11,49% |
+| `longitude` | 111.504,1821 | 9,85% |
+| `veiculos` | 75.828,1492 | 6,70% |
+| `fase_dia` | 47.037,4173 | 4,16% |
 
-O arquivo `configs/model_config.json` também registra uma estimativa
-honesta de F1 Macro igual a 0,5643. Esse valor vem de um procedimento
-diferente da avaliação completa de 2023 e não deve ser confundido com o
-F1 Macro de 0,6143.
+Interpretação: `tipo_acidente` domina a participação no Gain. Essa métrica resume a contribuição das divisões das árvores segundo o critério interno do XGBoost; não é causalidade.
 
-## 8. Limitações e cuidados de interpretação
+## 7. Análise SHAP
 
--   **Validação reutilizada:** 2023 participou da seleção de variáveis e
-    otimização. Seus resultados não equivalem a uma avaliação totalmente
-    independente.
--   **Teste histórico reutilizado:** 2024--2025 já foi consultado em
-    experimentos anteriores. Não deve ser divulgado como holdout
-    independente.
--   **Disponibilidade das variáveis:** `tipo_acidente`,
-    `causa_acidente`, `pessoas` e `veiculos` podem depender do registro
-    ou da investigação do acidente. A configuração atual deve ser
-    interpretada como classificação retrospectiva, não como previsão
-    necessariamente disponível antes ou no instante da ocorrência.
--   **Associação não é causalidade:** importância de variável não prova
-    que ela causa maior ou menor gravidade.
--   **Incerteza:** intervalos calculados por bootstrap em linhas tratam
-    registros como observações independentes e podem não representar
-    toda a dependência temporal ou geográfica.
--   **Escopo dos dados:** a base não contém denominadores de exposição
-    ou observações de locais e períodos sem acidentes. Portanto, não
-    permite estimar diretamente o risco de ocorrência de acidentes.
+A análise foi executada com:
+- amostra de 2.000 registros de 2024–2025;
+- `random_state=42`;
+- TreeExplainer;
+- 119 colunas transformadas;
+- saída SHAP para três classes;
+- agregação das contribuições das colunas transformadas por variável original.
 
-## 9. Reprodutibilidade
+### Importância global
 
-A configuração oficial está em:
+| Variável | Mean absolute SHAP |
+|---|---:|
+| `causa_acidente` | 2.313312 |
+| `tipo_acidente` | 1.208817 |
+| `latitude` | 0.434905 |
+| `longitude` | 0.391718 |
+| `fase_dia` | 0.326366 |
+| `veiculos` | 0.251389 |
+| `pessoas` | 0.167462 |
 
-``` text
-configs/model_config.json
-```
+A ordenação difere do Gain: SHAP coloca `causa_acidente` em primeiro lugar, enquanto Gain coloca `tipo_acidente` em primeiro lugar. Não há contradição: Gain mede contribuição das divisões; mean absolute SHAP resume a magnitude média das contribuições às saídas do modelo nos exemplos amostrados.
 
-O fluxo de treinamento e inferência mantido pelo projeto está em:
+**Limitação:** SHAP explica as saídas internas do XGBoost antes da aplicação dos multiplicadores posteriores de score por classe. Os valores SHAP não devem ser lidos como variação direta na probabilidade final.
 
-``` text
-src/br_risk_ml/
-```
+Arquivos produzidos pelo experimento:
+- `shap_importancia_global.csv`
+- `shap_importancia_por_classe.csv`
+- `shap_metadata.json`
+- `shap_global.png`
+- gráficos por classe
 
-Os scripts exploratórios não fazem parte do fluxo oficial de execução.
-Este documento preserva as principais decisões e resultados para dar
-transparência ao desenvolvimento sem exigir que o usuário execute todos
-os experimentos históricos.
+## 8. Diagnóstico de erros
 
-------------------------------------------------------------------------
+O diagnóstico de erros foi executado no conjunto temporal 2024–2025 com o artefato atual e a regra de predição do projeto.
 
-*Documento de apoio à documentação técnica do BR-Risk-ML. Consulte o
-README principal para instalação, estrutura do projeto e instruções de
-uso.*
+### Classe fatal
+
+Total de fatais reais: 10.434.
+- Preditos corretamente como fatais: 4.509.
+- Preditos como feridos: 5.178.
+- Preditos como sem vítimas: 747.
+- Recall fatal: 43,21%.
+
+### Tipos de acidente
+
+| Tipo | Fatais reais | Fatais reconhecidos | Recall fatal |
+|---|---:|---:|---:|
+| Engavetamento | 67 | 3 | 4,48% |
+| Capotamento | 116 | 6 | 5,17% |
+| Colisão lateral mesmo sentido | 414 | 27 | 6,52% |
+| Saída de leito carroçável | 1.238 | 83 | 6,70% |
+| Colisão transversal | 852 | 63 | 7,39% |
+| Atropelamento de animal | 143 | 13 | 9,09% |
+| Colisão com objeto | 557 | 66 | 11,85% |
+| Colisão traseira | 1.184 | 148 | 12,50% |
+| Tombamento | 531 | 67 | 12,62% |
+| Colisão frontal | 2.862 | 2.433 | 85,01% |
+| Atropelamento de pedestre | 1.848 | 1.501 | 81,22% |
+
+Colisão traseira, saída de leito carroçável e colisão transversal somaram 2.622 falsos negativos fatais (50,64% dos 5.178 classificados como feridos).
+
+É importante separar:
+- **volume de erros:** quantos erros uma categoria acumula;
+- **taxa de erro/recall:** qual fração dos fatais naquela categoria foi reconhecida.
+
+Uma categoria pequena pode ter recall muito baixo sem representar grande volume absoluto de erros.
+
+### Causas do acidente
+
+Exemplos de categorias com baixo recall fatal:
+- Condutor deixou de manter distância do veículo à frente: 157 fatais, 3 reconhecidos (1,91%).
+- Falhas mecânicas/elétricas: 105 fatais, 4 reconhecidos (3,81%).
+- Deixar de dar preferência em interseção: 47 fatais, 2 reconhecidos (4,26%).
+- Reação tardia ou ineficiente: 1.115 fatais, 203 reconhecidos (18,21%).
+- Ausência de reação do condutor: 1.468 fatais, 354 reconhecidos (24,11%).
+
+Entre as causas com mais falsos negativos em volume, destacaram-se ausência de reação (945), reação tardia ou ineficiente (819) e acesso à via sem observar outros veículos (619).
+
+### Fase do dia
+
+| Fase | Fatais reais | Reconhecidos | Recall fatal |
+|---|---:|---:|---:|
+| Pleno dia | 4.046 | 1.290 | 31,88% |
+| Anoitecer | 540 | 211 | 39,07% |
+| Amanhecer | 760 | 376 | 49,47% |
+| Plena noite | 5.088 | 2.632 | 51,73% |
+
+A diferença é descritiva e pode refletir a composição por tipo, causa, localização ou outras características. Não permite atribuir causalidade à fase do dia.
+
+### Combinações de causa e tipo
+
+Exemplos:
+- Acessar a via sem observar outros veículos + colisão transversal: 457 fatais, 22 reconhecidos (4,81%).
+- Reação tardia/ineficiente + saída de leito carroçável: 246 fatais, 10 reconhecidos (4,07%).
+- Ausência de reação + saída de leito carroçável: 341 fatais, 35 reconhecidos (10,26%).
+- Condutor deixou de manter distância + colisão traseira: 118 fatais, nenhum reconhecido (0%).
+- Transitar na contramão + colisão frontal: 1.234 fatais, 1.159 reconhecidos (93,92%).
+
+Esses cruzamentos apontam subgrupos em que a classe fatal foi mais difícil ou mais fácil de reconhecer. Não demonstram causalidade.
+
+### UF
+
+Foram observadas diferenças de composição e de recall entre UFs, mas amostras por estado variam e a distribuição dos tipos e causas também pode variar. Não se deve interpretar esses resultados como evidência de risco real por estado ou como comparação definitiva de qualidade dos registros estaduais.
+
+## 9. Decisões e próximos experimentos
+
+Para a versão inicial:
+- manter as sete variáveis definidas;
+- manter a configuração atual de XGBoost;
+- preservar o artefato atual;
+- documentar os resultados e limitações;
+- não realizar novos ajustes com base no conjunto de diagnóstico 2024–2025.
+
+Para versões futuras:
+1. criar uma nova avaliação temporal realmente independente, com período não consultado durante desenvolvimento;
+2. investigar estratégias de balanceamento usando somente dados de desenvolvimento;
+3. avaliar outras famílias de algoritmos sob protocolo temporal consistente;
+4. testar novas variáveis somente quando sua disponibilidade no momento de uso estiver definida;
+5. verificar calibração e utilidade operacional antes de qualquer aplicação de alto impacto.
+
+## 10. Artefatos do modelo
+
+Arquivo principal:
+`artifacts/models/br_risk_xgboost.joblib`
+
+O objeto serializado contém o pipeline, a lista de classes, as variáveis, configurações do modelo e metadados de balanceamento e pré-processamento.
+
+O artefato deve ser carregado apenas de fonte confiável, pois arquivos `joblib` utilizam desserialização Python.
